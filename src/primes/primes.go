@@ -75,22 +75,14 @@ func findPrimesInRange(x0, x1 Number, primes [][]Number) (newPrimes []Number) {
 	// }()
 
 	flags := make([]bool, x1-x0)
-	// numPrimes := len(flags)
 
 	for _, primeGroup := range primes {
 		for _, prime := range primeGroup {
 			for i := int(x0.alignUp(prime) - x0); i < len(flags); i += int(prime) {
 				flags[i] = true
-				/*
-				if !flags[i] {
-					flags[i] = true
-					numPrimes--
-				}
-				*/
 			}
 		}
 	}
-	// fmt.Println("    flags", flags)
 
 	// Collects new prime numbers:
 	estimatedNumPrimes := (x1 - x0) / (x1-x0).log10().max(1)
