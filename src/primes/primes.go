@@ -1,10 +1,108 @@
 package primes
 
 import (
-	"sync"
+	"sort"
 )
 
+// A natural number
 type Number uint64
+
+var PRIMES_100 []Number = []Number {
+	2, 3, 5, 7, 11, 13, 17, 19, 23,
+	29, 31, 37, 41, 43, 47, 53, 59, 61, 67,
+	71, 73, 79, 83, 89, 97, 101}
+
+// Finds prime numbers below N
+// Returns primes split in blocks for its convenience, they are sorted
+func FindPrimes(N Number) (results [][]Number) {
+
+	// fmt.Println("findNonPrimes(", N, nonPrimes, ")")
+	// defer func() {
+	// 	fmt.Println("    nonPrimes", nonPrimes)
+	// }()
+
+	// Primes below 100 are hard coded:
+	if N <= 100 {
+		var i int
+		for PRIMES_100[i] < N { i++ }
+		results = [][]Number{PRIMES_100[:i]}
+		return
+	}
+
+	// Recursively finds non-primes below or equal to sqrt(N)
+	n := (N.sqrt() + 1)
+	results = FindPrimes(n)
+
+	if n < 1000 {
+
+		// Fills serially the buffer of non primes:
+		primes := findPrimesInRange(n, N, results)
+		if len(primes) > 0 {
+			results = append(results, primes)
+		}
+
+	} else {
+		// Fills on parallel the buffer of non primes:
+		numResults := Number(len(results))
+		newResults := make(chan []Number)
+		numRoutines := 0
+		for x := n; x < N; x += n {
+			go func(x Number) {
+				newResults <- findPrimesInRange(x, (x + n).min(N), results)
+			}(x)
+			numRoutines++
+		}
+		for i := 0; i < numRoutines; i++ {
+			primes := <-newResults
+			if len(primes) > 0 {
+				results = append(results, primes)
+			}
+		}
+
+		// Sorts only new results:
+		sort.Sort(ByFirst(results[numResults:]))
+	}
+
+	return
+}
+
+// Finds prime numbers in the range [x0, x1) given all primes that are <= sqrt(x0)
+func findPrimesInRange(x0, x1 Number, primes [][]Number) (newPrimes []Number) {
+
+	// fmt.Println("findPrimesFrom", x0, x1, primes)
+	// defer func() {
+	//   	fmt.Println("    newPrimes", newPrimes)
+	// }()
+
+	flags := make([]bool, x1-x0)
+	// numPrimes := len(flags)
+
+	for _, primeGroup := range primes {
+		for _, prime := range primeGroup {
+			for i := int(x0.alignUp(prime) - x0); i < len(flags); i += int(prime) {
+				flags[i] = true
+				/*
+				if !flags[i] {
+					flags[i] = true
+					numPrimes--
+				}
+				*/
+			}
+		}
+	}
+	// fmt.Println("    flags", flags)
+
+	// Collects new prime numbers:
+	estimatedNumPrimes := (x1 - x0) / (x1-x0).log10().max(1)
+	newPrimes = make([]Number, 0, estimatedNumPrimes) // , numPrimes)
+	for i, hasDividends := range flags {
+		if !hasDividends {
+			newPrimes = append(newPrimes, x0 + Number(i))
+		}
+	}
+
+	return
+}
 
 // Returns the squared root of a number strictly positive
 func (x Number) sqrt() (y Number) {
@@ -13,8 +111,6 @@ func (x Number) sqrt() (y Number) {
 	}
 	y--
 
-	// fmt.Println("sqrt(", x, ")")
-	// fmt.Println("    y", y)
 	return
 }
 
@@ -32,121 +128,43 @@ func (x Number) alignUp(k Number) (y Number) {
 	return
 }
 
+// Min function
+func (a Number) min(b Number) (y Number) {
+	if a < b {
+		y = a
+	} else {
+		y = b
+	}
+	return
+}
+
+// Max function
+func (a Number) max(b Number) (y Number) {
+	if a < b {
+		y = b
+	} else {
+		y = a
+	}
+	return
+}
+
+func (x Number) isDerivedBy(k Number) bool {
+	return x%k == 0
+}
+
 // Returns the 10 logarithm of x
 func (x Number) log10() (y Number) {
 	z := Number(10)
 	for z <= x {
 		z *= 10
 		y += 1
-
 	}
 	return
 }
 
+// Used to sort result blocks using the first element
+type ByFirst [][]Number
 
-// Finds prime numbers below N.
-func FindPrimes(N Number) (primes []Number) {
-
-	capacity := Number(20)
-	if N > 100 {
-		capacity = N / N.log10()
-	}
-	// fmt.Println(N, "->", capacity)
-
-	primes = make([]Number, 0, capacity)
-	if N <= 2 {
-		return
-	}
-
-	nonPrimes := make([]bool, N)
-	findNonPrimes(nonPrimes)
-
-	var j Number
-	primes = append(primes, 2)
-	j++
-
-	X := Number(len(nonPrimes))
-	for x := Number(3); x + 1 <= X; x += 2 {
-		if !nonPrimes[x] {
-			primes = append(primes, x)
-			j++
-		}
-	}
-
-	// fmt.Println("primes", primes)
-	return
-}
-
-func findNonPrimes(nonPrimes []bool) {
-
-	N := Number(len(nonPrimes))
-	// fmt.Println("findNonPrimes(", N, nonPrimes, ")")
-	// defer func() {
-	// 	fmt.Println("    nonPrimes", nonPrimes)
-	// }()
-
-	// First non primes are hard-coded:
-	if N <= 16 {
-		copy(nonPrimes, []bool{
-			true, true, false, false,    // 0 - 3
-			true, false, true, false,    // 4 - 7
-			true, true, true, false,     // 8 - 11
-			true, false, true, true,})   // 12 - 15
-		return
-	}
-
-	// Recursively finds non-primes below or equal to sqrt(N)
-	n := N.sqrt() + 1
-	findNonPrimes(nonPrimes[:n])
-
-	if n < 1000 {
-		// Fills serially the buffer of non primes:
-		for x1 := n; x1 < N; x1 += n {
-			x2 := x1 + n
-			if x2 > N {
-				x2 = N
-			}
-			fillNonPrimes(x1, nonPrimes[:n], nonPrimes[x1:x2])
-		}
-	} else {
-		// Fills on parallel the buffer of non primes:
-		var wg sync.WaitGroup
-		for x1 := n; x1 < N; x1 += n {
-			x2 := x1 + n
-			if x2 > N {
-				x2 = N
-			}
-			go func(x1, x2 Number) {
-				fillNonPrimes(x1, nonPrimes[:n], nonPrimes[x1:x2])
-				wg.Done()
-			}(x1, x2)
-			wg.Add(1)
-		}
-		wg.Wait()
-	}
-
-	return
-}
-
-func fillNonPrimes(yStart Number, in, out []bool) {
-
-	// fmt.Println("fillNonPrimes(", yStart, in, out, ")")
-	// defer func() {
-	// 	fmt.Println("    out", out)
-	// }()
-
-	X := Number(len(in))
-	Y := Number(len(out))
-
-	// NOTE: we start from 3 because we ignore even numbers.
-	for x := Number(3); x < X; x++ {
-		if !in[x] {
-			y := yStart.alignUp(x) - yStart
-			for ; y < Y; y += x {
-				out[y] = true
-			}
-		}
-	}
-
-	return
-}
+func (p ByFirst) Len() int           { return len(p) }
+func (p ByFirst) Less(i, j int) bool { return p[i][0] < p[j][0] }
+func (p ByFirst) Swap(i, j int)      { p[i], p[j] = p[j], p[i] }
